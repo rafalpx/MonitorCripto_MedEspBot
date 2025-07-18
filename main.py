@@ -1,49 +1,48 @@
-# -*- coding: utf-8 -*-
+import requests
 import time
 from binance.client import Client
 from telegram import Bot
-import os
 
-# API Binance
-api_key = "SgiViR6JUJUjwkLpLUXkVt5S1i43YIzNphg2QVfpsD34uVcPn77JDNGRlInL6xvM"
-api_secret = "NJyWvylMLOUUHwemLbaCHDZMoJLuuA8iLGXZd2Bua23FNDVmSvKMo1td9eq7TXW0"
+# Chaves fornecidas
+API_KEY = 'SgiViR6JUJUjwkLpLUXkVt5S1i43YIzNphg2QVfpsD34uVcPn77JDNGRlInL6xvM'
+API_SECRET = 'NJyWvylMLOUUHwemLbaCHDZMoJLuuA8iLGXZd2Bua23FNDVmSvKMo1td9eq7TXW0'
+bot_token = '8145852232:AAFB7J8vofCx9q2iW3nUuboiwl3K4uUPmI4'
+chat_id = '251321771'
 
-client = Client(api_key, api_secret)
-
-# Telegram
-bot_token = "8145852232:AAFB7J8vofCx9q2iW3nUuboiwl3K4uUPmI4"
-chat_id = "251321771"
+# Inicializa clientes
+client = Client(API_KEY, API_SECRET)
 bot = Bot(token=bot_token)
 
 # Saldo anterior
-saldo_anterior = None
+last_total = 0
 
-def obter_saldo_total_reais():
-    info = client.get_account()
-    total_brl = 0.0
-    for asset in info["balances"]:
-        moeda = asset["asset"]
-        saldo = float(asset["free"])
-        if saldo > 0:
-            if moeda == "BRL":
-                total_brl += saldo
-            elif moeda != "USDT":
-                try:
-                    preco = client.get_symbol_ticker(symbol=f"{moeda}BRL")["price"]
-                    total_brl += saldo * float(preco)
-                except:
-                    continue
-    return round(total_brl, 2)
+def get_balance():
+    prices = client.get_all_tickers()
+    balances = client.get_account()['balances']
+    total_brl = 0
+    for asset in balances:
+        asset_name = asset['asset']
+        free_amount = float(asset['free'])
+        if free_amount > 0:
+            for price in prices:
+                if price['symbol'] == asset_name + 'USDT':
+                    brl_price = float(price['price']) * 5  # Aproximando 1 USDT ≈ 5 BRL
+                    total_brl += free_amount * brl_price
+    return total_brl
 
-while True:
-    try:
-        total = obter_saldo_total_reais()
-        if total != saldo_anterior:
-            saldo_anterior = total
-            mensagem = f"📊 *Saldo Atualizado*"
+def main_loop():
+    global last_total
+    while True:
+        try:
+            total = get_balance()
+            if abs(total - last_total) > 0.01:
+                last_total = total
+                mensagem = f"*📊 Saldo Atualizado:*
 💰 Total: R$ {total:.2f}"
-            bot.send_message(chat_id=chat_id, text=mensagem, parse_mode="Markdown")
+                bot.send_message(chat_id=chat_id, text=mensagem, parse_mode='Markdown')
+        except Exception as e:
+            print("Erro:", e)
         time.sleep(60)
-    except Exception as e:
-        print("Erro:", e)
-        time.sleep(60)
+
+if __name__ == "__main__":
+    main_loop()
