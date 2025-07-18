@@ -40,7 +40,7 @@ while True:
         total = obter_saldo_total_reais()
         if total != saldo_anterior:
             saldo_anterior = total
-            mensagem = f"📊 *Saldo Atualizado*
+            mensagem = f"📊 *Saldo Atualizado*"
 💰 Total: R$ {total:.2f}"
             bot.send_message(chat_id=chat_id, text=mensagem, parse_mode="Markdown")
         time.sleep(60)
