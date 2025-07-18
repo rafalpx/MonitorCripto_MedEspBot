@@ -1,56 +1,77 @@
-import json
+# -*- coding: utf-8 -*-
 import time
 import requests
-from binance.client import Client
-from telegram import Bot
+import json
+import hmac
+import hashlib
+import base64
+import urllib.parse
+from datetime import datetime
+from pytz import timezone
+import telegram
 
-with open('config.json') as f:
-    config = json.load(f)
+# CONFIGURAÇÕES
+API_KEY = "SgiViR6JUJUjwkLpLUXkVt5S1i43YIzNphg2QVfpsD34uVcPn77JDNGRlInL6xvM"
+API_SECRET = "NJyWvylMLOUUHwemLbaCHDZMoJLuuA8iLGXZd2Bua23FNDVmSvKMo1td9eq7TXW0"
+TELEGRAM_TOKEN = "8145852232:AAFB7J8vofCx9q2iW3nUuboiwl3K4uUPmI4"
+CHAT_ID = "251321771"
 
-bot_token = config["bot_token"]
-chat_id = config["chat_id"]
-api_key = config["binance_api_key"]
-api_secret = config["binance_api_secret"]
-meta_reais = config["meta_reais"]
+BASE_URL = "https://api.binance.com"
+HEADERS = {"X-MBX-APIKEY": API_KEY}
 
-bot = Bot(token=bot_token)
-client = Client(api_key, api_secret)
-
-last_balances = {}
-
-def get_balance():
-    account = client.get_account()
-    balances = {b['asset']: float(b['free']) + float(b['locked']) for b in account['balances'] if float(b['free']) > 0 or float(b['locked']) > 0}
-    return balances
+def get_account_info():
+    timestamp = int(time.time() * 1000)
+    query_string = f"timestamp={timestamp}"
+    signature = hmac.new(API_SECRET.encode('utf-8'), query_string.encode('utf-8'), hashlib.sha256).hexdigest()
+    url = f"{BASE_URL}/api/v3/account?{query_string}&signature={signature}"
+    response = requests.get(url, headers=HEADERS)
+    return response.json()
 
 def get_prices():
-    tickers = client.get_all_tickers()
-    return {t['symbol']: float(t['price']) for t in tickers}
+    url = f"{BASE_URL}/api/v3/ticker/price"
+    response = requests.get(url)
+    return {item['symbol']: float(item['price']) for item in response.json()}
 
-def calcular_valor_total(balances, prices):
-    total = 0.0
-    for asset, amount in balances.items():
-        symbol = asset + "BRL" if asset != "BRL" else "BRL"
-        price = prices.get(symbol, 0)
-        total += amount * price
-    return round(total, 2)
+def get_portfolio_value(account_info, prices):
+    total_brl = 0
+    report = []
+    for asset in account_info['balances']:
+        symbol = asset['asset']
+        free = float(asset['free'])
+        if free > 0 and symbol + "USDT" in prices:
+            value = free * prices[symbol + "USDT"]
+            total_brl += value * 5.4  # conversão aproximada
+            report.append(f"🔸 {symbol}: R$ {value * 5.4:.2f}")
+    return total_brl, report
 
-while True:
-    try:
-        balances = get_balance()
-        prices = get_prices()
-        total = calcular_valor_total(balances, prices)
+def send_telegram_message(message):
+    bot = telegram.Bot(token=TELEGRAM_TOKEN)
+    bot.send_message(chat_id=CHAT_ID, text=message, parse_mode="Markdown")
 
-        if total != last_balances.get("total"):
-            progresso = (total / meta_reais) * 100
-            message = f"📊 *Saldo Atualizado:*"
+def main():
+    last_total = 0
+    while True:
+        try:
+            account_info = get_account_info()
+            prices = get_prices()
+            total, report = get_portfolio_value(account_info, prices)
 
-💰 Total: R$ {total:.2f}
-🎯 Meta: R$ {meta_reais:.2f} ({progresso:.2f}%)"
-            bot.send_message(chat_id=chat_id, text=message, parse_mode='Markdown')
-            last_balances["total"] = total
+            if abs(total - last_total) > 0.01:
+                last_total = total
+                message = "*📊 Saldo Atualizado*
+"
+                message += "
+".join(report)
+                message += f"
 
-        time.sleep(30)
-    except Exception as e:
-        print("Erro:", e)
-        time.sleep(60)
+💰 *Total: R$ {total:.2f}*"
+                send_telegram_message(message)
+
+            time.sleep(30)
+        except Exception as e:
+            print("Erro:", e)
+            time.sleep(60)
+
+if __name__ == "__main__":
+    main()
+
