@@ -1,37 +1,52 @@
-from telegram import Bot
-from telegram.constants import ParseMode
-import os
-from decimal import Decimal
-from dotenv import load_dotenv
+
+import time
+import requests
 from binance.client import Client
-import ccxt
+from telegram import Bot
 
-# Carregar variáveis de ambiente (se estiver usando .env)
-load_dotenv()
+# Configurações
+api_key = 'SUA_BINANCE_API_KEY'
+api_secret = 'SUA_BINANCE_API_SECRET'
+bot_token = '8145852232:AAFB7J8vofCx9q2iW3nUuboiwl3K4uUPmI4'
+chat_id = '251321771'
 
-# Configurações do Telegram e Binance
-TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN", "SEU_TOKEN_AQUI")
-CHAT_ID = os.getenv("TELEGRAM_CHAT_ID", "SEU_CHAT_ID_AQUI")
-API_KEY = os.getenv("BINANCE_API_KEY", "SUA_API_KEY")
-API_SECRET = os.getenv("BINANCE_API_SECRET", "SUA_API_SECRET")
+client = Client(api_key, api_secret)
+bot = Bot(token=bot_token)
 
-bot = Bot(token=TELEGRAM_TOKEN)
-client = Client(API_KEY, API_SECRET)
-
-def obter_saldo_total():
+def obter_saldo():
     info = client.get_account()
-    total = 0.0
-    for asset in info['balances']:
-        quantidade = float(asset['free']) + float(asset['locked'])
-        if quantidade > 0:
-            total += quantidade  # Simulação, o ideal é multiplicar pela cotação
-    return total
+    balances = info['balances']
+    moedas = {b['asset']: float(b['free']) for b in balances if float(b['free']) > 0}
+    return moedas
 
-def enviar_mensagem_saldo():
-    total = obter_saldo_total()
-    mensagem = f"📊 Saldo Atualizado:"
-💰 Total: R$ {total:.2f}"
-    bot.send_message(chat_id=CHAT_ID, text=mensagem, parse_mode=ParseMode.HTML)
+def enviar_mensagem(mensagem):
+    bot.send_message(chat_id=chat_id, text=mensagem)
+
+def main():
+    saldo_anterior = {}
+    while True:
+        saldo_atual = obter_saldo()
+        if saldo_atual != saldo_anterior:
+            total = 0
+            msg = "💰 Saldo Atualizado:\n"
+            for moeda, quantidade in saldo_atual.items():
+                preco = obter_preco_moeda(moeda)
+                valor = quantidade * preco
+                total += valor
+                msg += f"{moeda}: {quantidade} ≈ R$ {valor:.2f}\n"
+            msg += f"Total: R$ {total:.2f}"
+            enviar_mensagem(msg)
+            saldo_anterior = saldo_atual
+        time.sleep(60)
+
+def obter_preco_moeda(moeda):
+    if moeda == "BRL":
+        return 1.0
+    try:
+        ticker = client.get_symbol_ticker(symbol=f"{moeda}BRL")
+        return float(ticker['price'])
+    except:
+        return 0.0
 
 if __name__ == "__main__":
-    enviar_mensagem_saldo()
+    main()
