@@ -29,7 +29,7 @@ def obter_saldo_total():
 
 def enviar_mensagem_saldo():
     total = obter_saldo_total()
-    mensagem = f"📊 Saldo Atualizado:
+    mensagem = f"📊 Saldo Atualizado:"
 💰 Total: R$ {total:.2f}"
     bot.send_message(chat_id=CHAT_ID, text=mensagem, parse_mode=ParseMode.HTML)
 
