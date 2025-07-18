@@ -1,77 +1,84 @@
-# -*- coding: utf-8 -*-
-import time
+
 import requests
-import json
+import time
 import hmac
 import hashlib
 import base64
-import urllib.parse
+import json
 from datetime import datetime
-from pytz import timezone
-import telegram
+import pytz
+from telegram import Bot
 
-# CONFIGURAÇÕES
+# Credenciais da Binance
 API_KEY = "SgiViR6JUJUjwkLpLUXkVt5S1i43YIzNphg2QVfpsD34uVcPn77JDNGRlInL6xvM"
 API_SECRET = "NJyWvylMLOUUHwemLbaCHDZMoJLuuA8iLGXZd2Bua23FNDVmSvKMo1td9eq7TXW0"
-TELEGRAM_TOKEN = "8145852232:AAFB7J8vofCx9q2iW3nUuboiwl3K4uUPmI4"
-CHAT_ID = "251321771"
 
-BASE_URL = "https://api.binance.com"
-HEADERS = {"X-MBX-APIKEY": API_KEY}
+# Telegram
+bot_token = "8145852232:AAFB7J8vofCx9q2iW3nUuboiwl3K4uUPmI4"
+chat_id = "251321771"
+bot = Bot(token=bot_token)
 
-def get_account_info():
+# Meta em reais
+META = 500000
+
+def get_binance_balances():
+    base_url = "https://api.binance.com"
+    endpoint = "/api/v3/account"
     timestamp = int(time.time() * 1000)
     query_string = f"timestamp={timestamp}"
-    signature = hmac.new(API_SECRET.encode('utf-8'), query_string.encode('utf-8'), hashlib.sha256).hexdigest()
-    url = f"{BASE_URL}/api/v3/account?{query_string}&signature={signature}"
-    response = requests.get(url, headers=HEADERS)
+    signature = hmac.new(API_SECRET.encode(), query_string.encode(), hashlib.sha256).hexdigest()
+    headers = {
+        "X-MBX-APIKEY": API_KEY
+    }
+    url = f"{base_url}{endpoint}?{query_string}&signature={signature}"
+    response = requests.get(url, headers=headers)
     return response.json()
 
 def get_prices():
-    url = f"{BASE_URL}/api/v3/ticker/price"
+    url = "https://api.binance.com/api/v3/ticker/price"
     response = requests.get(url)
-    return {item['symbol']: float(item['price']) for item in response.json()}
+    return {item["symbol"]: float(item["price"]) for item in response.json()}
 
-def get_portfolio_value(account_info, prices):
+def monitor():
+    prices = get_prices()
+    data = get_binance_balances()
+    balances = data.get("balances", [])
     total_brl = 0
     report = []
-    for asset in account_info['balances']:
-        symbol = asset['asset']
-        free = float(asset['free'])
-        if free > 0 and symbol + "USDT" in prices:
-            value = free * prices[symbol + "USDT"]
-            total_brl += value * 5.4  # conversão aproximada
-            report.append(f"🔸 {symbol}: R$ {value * 5.4:.2f}")
-    return total_brl, report
 
-def send_telegram_message(message):
-    bot = telegram.Bot(token=TELEGRAM_TOKEN)
-    bot.send_message(chat_id=CHAT_ID, text=message, parse_mode="Markdown")
+    symbols_map = {
+        "BTC": "BTCBRL",
+        "ETH": "ETHBRL",
+        "XRP": "XRPBRL",
+        "W": "WBRL",
+        "ERA": "ERABRL"
+    }
 
-def main():
-    last_total = 0
-    while True:
-        try:
-            account_info = get_account_info()
-            prices = get_prices()
-            total, report = get_portfolio_value(account_info, prices)
+    for item in balances:
+        asset = item["asset"]
+        free = float(item["free"])
+        if free > 0 and asset in symbols_map:
+            pair = symbols_map[asset]
+            price = prices.get(pair, 0)
+            value_brl = free * price
+            total_brl += value_brl
+            report.append(f"• {asset}: R$ {value_brl:.2f}")
 
-            if abs(total - last_total) > 0.01:
-                last_total = total
-                message = "*📊 Saldo Atualizado*
-"
-                message += "
+    lucro = total_brl - 91.75
+    percentual = (total_brl / META) * 100
+
+    mensagem = f"📊 Saldo Atualizado
+" + "
 ".join(report)
-                message += f"
+    mensagem += f"\n\n💰 Total: R$ {total_brl:.2f}\n📈 Lucro: R$ {lucro:.2f}\n🎯 Meta: R$ {META} ({percentual:.2f}%)"
 
-💰 *Total: R$ {total:.2f}*"
-                send_telegram_message(message)
-
-            time.sleep(30)
-        except Exception as e:
-            print("Erro:", e)
-            time.sleep(60)
+    bot.send_message(chat_id=chat_id, text=mensagem, parse_mode='Markdown')
 
 if __name__ == "__main__":
-    main()
-
+    while True:
+        try:
+            monitor()
+            time.sleep(30)  # Ajustável conforme desejado
+        except Exception as e:
+            bot.send_message(chat_id=chat_id, text=f"❌ Erro: {str(e)}")
+            time.sleep(60)
