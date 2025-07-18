@@ -1,58 +1,49 @@
+# -*- coding: utf-8 -*-
 import time
-import requests
-import json
 from binance.client import Client
 from telegram import Bot
+import os
 
-# Credenciais
-API_KEY = "SgiViR6JUJUjwkLpLUXkVt5S1i43YIzNphg2QVfpsD34uVcPn77JDNGRlInL6xvM"
-API_SECRET = "NJyWvylMLOUUHwemLbaCHDZMoJLuuA8iLGXZd2Bua23FNDVmSvKMo1td9eq7TXW0"
+# API Binance
+api_key = "SgiViR6JUJUjwkLpLUXkVt5S1i43YIzNphg2QVfpsD34uVcPn77JDNGRlInL6xvM"
+api_secret = "NJyWvylMLOUUHwemLbaCHDZMoJLuuA8iLGXZd2Bua23FNDVmSvKMo1td9eq7TXW0"
+
+client = Client(api_key, api_secret)
+
+# Telegram
 bot_token = "8145852232:AAFB7J8vofCx9q2iW3nUuboiwl3K4uUPmI4"
 chat_id = "251321771"
-
-client = Client(API_KEY, API_SECRET)
 bot = Bot(token=bot_token)
 
-meta = 500000  # Meta em R$
+# Saldo anterior
+saldo_anterior = None
 
-def obter_saldos():
-    infos = client.get_account()
-    cotacoes = {
-        "BTC": float(client.get_symbol_ticker(symbol="BTCBRL")["price"]),
-        "ETH": float(client.get_symbol_ticker(symbol="ETHBRL")["price"]),
-        "XRP": float(client.get_symbol_ticker(symbol="XRPBRL")["price"]),
-        "CALDERA": 0.01,
-        "WORMHOLE": 0.02
-    }
-    total = 0
-    detalhes = []
-    for item in infos["balances"]:
-        moeda = item["asset"]
-        saldo = float(item["free"])
-        if moeda in cotacoes and saldo > 0:
-            valor_em_reais = saldo * cotacoes[moeda]
-            total += valor_em_reais
-            detalhes.append((moeda, valor_em_reais))
-    return total, detalhes
-
-total_anterior = 0
+def obter_saldo_total_reais():
+    info = client.get_account()
+    total_brl = 0.0
+    for asset in info["balances"]:
+        moeda = asset["asset"]
+        saldo = float(asset["free"])
+        if saldo > 0:
+            if moeda == "BRL":
+                total_brl += saldo
+            elif moeda != "USDT":
+                try:
+                    preco = client.get_symbol_ticker(symbol=f"{moeda}BRL")["price"]
+                    total_brl += saldo * float(preco)
+                except:
+                    continue
+    return round(total_brl, 2)
 
 while True:
     try:
-        total, detalhes = obter_saldos()
-        if total != total_anterior:
-            lucro = total - 91.75
-            percentual = (total / meta) * 100
-            mensagem = "📊 *Saldo Atualizado*\n"
-            for moeda, valor in detalhes:
-                mensagem += f"• {moeda}: R$ {valor:.2f}\n"
-            mensagem += f"\n💰 Total: R$ {total:.2f}\n"
-            mensagem += f"📈 Lucro: R$ {lucro:.2f}\n"
-            mensagem += f"🎯 Meta: R$ {meta:,.0f} ({percentual:.2f}%)"
-
+        total = obter_saldo_total_reais()
+        if total != saldo_anterior:
+            saldo_anterior = total
+            mensagem = f"📊 *Saldo Atualizado*
+💰 Total: R$ {total:.2f}"
             bot.send_message(chat_id=chat_id, text=mensagem, parse_mode="Markdown")
-            total_anterior = total
-        time.sleep(30)
+        time.sleep(60)
     except Exception as e:
-        bot.send_message(chat_id=chat_id, text=f"Erro detectado:\n{str(e)}")
+        print("Erro:", e)
         time.sleep(60)
