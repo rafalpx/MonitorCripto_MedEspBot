@@ -43,7 +43,7 @@ while True:
 
         if total != last_balances.get("total"):
             progresso = (total / meta_reais) * 100
-            message = f"📊 *Saldo Atualizado:*
+            message = f"📊 *Saldo Atualizado:*"
 
 💰 Total: R$ {total:.2f}
 🎯 Meta: R$ {meta_reais:.2f} ({progresso:.2f}%)"
