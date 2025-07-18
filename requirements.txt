@@ -1,5 +1,4 @@
-python-telegram-bot==20.6
-ccxt==4.1.79
-binance-connector==3.6.0
-cryptography==42.0.2
-python-dotenv==1.0.1
+
+python-telegram-bot==13.15
+requests
+python-binance
