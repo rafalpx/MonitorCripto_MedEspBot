@@ -1,52 +1,88 @@
 
 import time
 import requests
+import json
+import telegram
+from decimal import Decimal
 from binance.client import Client
-from telegram import Bot
+from config import TELEGRAM_TOKEN, TELEGRAM_CHAT_ID, BINANCE_API_KEY, BINANCE_API_SECRET
 
-# Configurações
-api_key = 'SUA_BINANCE_API_KEY'
-api_secret = 'SUA_BINANCE_API_SECRET'
-bot_token = '8145852232:AAFB7J8vofCx9q2iW3nUuboiwl3K4uUPmI4'
-chat_id = '251321771'
+bot = telegram.Bot(token=TELEGRAM_TOKEN)
+client = Client(api_key=BINANCE_API_KEY, api_secret=BINANCE_API_SECRET)
 
-client = Client(api_key, api_secret)
-bot = Bot(token=bot_token)
+meta_objetivo_brl = Decimal("500000")
+ultimo_saldo_total = Decimal("0.00")
+saldo_anterior = {}
 
-def obter_saldo():
-    info = client.get_account()
-    balances = info['balances']
-    moedas = {b['asset']: float(b['free']) for b in balances if float(b['free']) > 0}
-    return moedas
+def get_price(symbol):
+    url = f"https://api.binance.com/api/v3/ticker/price?symbol={symbol}BRL"
+    response = requests.get(url)
+    data = response.json()
+    return Decimal(data["price"])
 
-def enviar_mensagem(mensagem):
-    bot.send_message(chat_id=chat_id, text=mensagem)
+def obter_saldos():
+    contas = client.get_account()
+    saldos = {}
+    for ativo in contas["balances"]:
+        asset = ativo["asset"]
+        free = Decimal(ativo["free"])
+        locked = Decimal(ativo["locked"])
+        total = free + locked
+        if total > 0:
+            saldos[asset] = total
+    return saldos
+
+def calcular_total_e_lucro(saldos):
+    total_brl = Decimal("0.00")
+    variacoes = []
+    for moeda, quantidade in saldos.items():
+        if moeda == "BRL":
+            preco = Decimal("1.00")
+        else:
+            try:
+                preco = get_price(moeda)
+            except:
+                continue
+        valor_brl = quantidade * preco
+        total_brl += valor_brl
+
+        variacao = Decimal("0.00")
+        if moeda in saldo_anterior:
+            variacao = valor_brl - saldo_anterior[moeda]
+
+        saldo_anterior[moeda] = valor_brl
+        variacoes.append((moeda, valor_brl, variacao))
+
+    return total_brl, variacoes
+
+def enviar_alerta(saldo_total, variacoes):
+    progresso = (saldo_total / meta_objetivo_brl) * 100
+    lucro = saldo_total - ultimo_saldo_total
+    msg = "📊 *Saldo Atualizado*
+"
+    for moeda, valor, variacao in variacoes:
+        emoji = "🟢" if variacao > 0 else "🔴" if variacao < 0 else "⚪️"
+        sinal = "+" if variacao > 0 else ""
+        msg += f"{emoji} {moeda}: R$ {valor:.2f} ({sinal}R$ {variacao:.2f})
+"
+    msg += f"
+🧾 Total: R$ {saldo_total:.2f}
+💰 Lucro: R$ {lucro:.2f}
+🎯 Meta: R$ {meta_objetivo_brl:,} ({progresso:.2f}%)"
+    bot.send_message(chat_id=TELEGRAM_CHAT_ID, text=msg, parse_mode=telegram.ParseMode.MARKDOWN)
 
 def main():
-    saldo_anterior = {}
+    global ultimo_saldo_total
     while True:
-        saldo_atual = obter_saldo()
-        if saldo_atual != saldo_anterior:
-            total = 0
-            msg = "💰 Saldo Atualizado:\n"
-            for moeda, quantidade in saldo_atual.items():
-                preco = obter_preco_moeda(moeda)
-                valor = quantidade * preco
-                total += valor
-                msg += f"{moeda}: {quantidade} ≈ R$ {valor:.2f}\n"
-            msg += f"Total: R$ {total:.2f}"
-            enviar_mensagem(msg)
-            saldo_anterior = saldo_atual
+        try:
+            saldos = obter_saldos()
+            saldo_total, variacoes = calcular_total_e_lucro(saldos)
+            if saldo_total != ultimo_saldo_total:
+                enviar_alerta(saldo_total, variacoes)
+                ultimo_saldo_total = saldo_total
+        except Exception as e:
+            print(f"Erro: {e}")
         time.sleep(60)
-
-def obter_preco_moeda(moeda):
-    if moeda == "BRL":
-        return 1.0
-    try:
-        ticker = client.get_symbol_ticker(symbol=f"{moeda}BRL")
-        return float(ticker['price'])
-    except:
-        return 0.0
 
 if __name__ == "__main__":
     main()
